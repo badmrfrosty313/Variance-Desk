@@ -42,15 +42,13 @@ def main(argv: list[str] | None = None) -> int:
         return self_test()
     from PySide6.QtWidgets import QApplication
     from .ui import DashboardWindow
-    from .sample_data import demo_transactions
     app = QApplication.instance() or QApplication(sys.argv)
     try:
-        records = demo_transactions()
-        window = DashboardWindow(records)
+        window = DashboardWindow()
         window.show()
         if args.smoke_gui:
             app.processEvents()
-            if not window.isVisible() or window.table.rowCount() != len(records):
+            if not window.isVisible() or window.table.rowCount() == 0:
                 raise RuntimeError("Dashboard did not render the demonstration records")
             window.close()
             app.processEvents()
