@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget, QFormLayout,
 )
 from .finance import ForecastAssumptions, build_forecast, variance_analysis, totals
-from .imports import import_file
+from .imports import FinancialFact, import_file
 from .storage import FinancialStore
 from .sample_data import demo_transactions, monthly_history
 from .reporting import export_excel, export_pdf
@@ -126,6 +126,8 @@ class DashboardWindow(QMainWindow):
         self.setWindowTitle("VarianceDesk — FP&A Dashboard")
         self.resize(1180, 760)
         self._build()
+        self._table_refreshing = False
+        self._demo_baseline = [dict(row) for row in self._records]
         self._populate_filters()
         self.refresh()
         self.refresh_forecast()
@@ -220,6 +222,8 @@ class DashboardWindow(QMainWindow):
 
     def _build_analysis_pages(self) -> None:
         self.variance_table = self._new_table(["Period", "Department", "Account", "Kind", "Budget", "Actual", "Favorable variance", "Variance %"])
+        self.variance_table.setEditTriggers(QTableWidget.EditTrigger.DoubleClicked | QTableWidget.EditTrigger.EditKeyPressed)
+        self.variance_table.cellChanged.connect(self._commit_variance_edit)
         page = QWidget(); v = QVBoxLayout(page); v.addWidget(QLabel("Positive values are favorable: revenue above budget and expenses below budget. Percent is blank for zero budgets.")); v.addWidget(self.variance_table); self.pages.addWidget(page)
         forecast_page = QWidget(); f = QVBoxLayout(forecast_page); form = QFormLayout()
         self.revenue_growth = self._spin(.03); self.expense_growth = self._spin(.02)
@@ -231,7 +235,8 @@ class DashboardWindow(QMainWindow):
         f.addLayout(form); f.addWidget(self.recalculate_forecast_button); f.addWidget(self.scenario_filter); f.addWidget(self.forecast_chart); f.addWidget(self.forecast_table, 1); self.pages.addWidget(forecast_page)
         data_page = QWidget(); d = QVBoxLayout(data_page); self.import_button = QPushButton("Import CSV or Excel workbook…"); self.import_button.clicked.connect(self.import_dialog)
         self.import_status = QLabel("Imports require period, department, account, kind, budget, actual.")
-        d.addWidget(self.import_button); d.addWidget(self.import_status); d.addWidget(QLabel("Imported records are saved locally and retained between launches.")); d.addStretch(); self.pages.addWidget(data_page)
+        self.reset_demo_button = QPushButton("Restore demonstration data"); self.reset_demo_button.clicked.connect(self.reset_demo_data)
+        d.addWidget(self.import_button); d.addWidget(self.reset_demo_button); d.addWidget(self.import_status); d.addWidget(QLabel("Imported and edited records are saved locally and retained between launches.")); d.addStretch(); self.pages.addWidget(data_page)
         reports = QWidget(); rp = QVBoxLayout(reports); self.excel_button = QPushButton("Export Excel workbook…"); self.pdf_button = QPushButton("Export PDF report…")
         self.excel_button.clicked.connect(self.export_excel_dialog); self.pdf_button.clicked.connect(self.export_pdf_dialog)
         self.report_status = QLabel("Reports include the currently selected dataset."); rp.addWidget(self.excel_button); rp.addWidget(self.pdf_button); rp.addWidget(self.report_status); rp.addStretch(); self.pages.addWidget(reports)
@@ -246,10 +251,24 @@ class DashboardWindow(QMainWindow):
         if index == 2: self.refresh_forecast()
 
     def toggle_demo(self) -> None:
-        self.demo_mode = not self.demo_mode
-        self._records = demo_transactions() if self.demo_mode else self.store.fetch()
+        if self.demo_mode:
+            self.demo_mode = False
+            saved = self.store.fetch()
+            self._records = [self._normalize_record(row) for row in saved] if saved else [dict(row) for row in self._demo_baseline]
+        else:
+            self.demo_mode = True
+            self._records = [dict(row) for row in self._demo_baseline]
         self.demo_toggle.setText("Use imported data" if self.demo_mode else "Use demo data")
         self._populate_filters(); self.refresh()
+
+    def reset_demo_data(self) -> None:
+        self.store.reset()
+        self.demo_mode = True
+        self._demo_baseline = [dict(row) for row in demo_transactions()]
+        self._records = [dict(row) for row in self._demo_baseline]
+        self.demo_toggle.setText("Use imported data")
+        self._populate_filters(); self.refresh(); self.refresh_forecast()
+        self.import_status.setText("Demo data restored to the original 24-month baseline.")
 
     def import_dialog(self) -> None:
         path, _ = QFileDialog.getOpenFileName(self, "Import financial data", "", "Financial files (*.csv *.xlsx)")
@@ -289,6 +308,8 @@ class DashboardWindow(QMainWindow):
             scenario = selected if selected != "All scenarios" else "Base"
             line = [r for r in self._forecast if r["scenario"] == scenario]
             self.forecast_chart.set_points((r["period"], r["revenue"], r["expenses"]) for r in line)
+        elif hasattr(self, "forecast_chart"):
+            self.forecast_chart.set_points([])
 
     @staticmethod
     def _monthly_history(rows: list[Any]) -> list[dict[str, Any]]:
@@ -298,16 +319,52 @@ class DashboardWindow(QMainWindow):
             grouped[str(_get(r, "period"))][field] += float(_get(r, "actual", 0))
         return [dict(period=p, **v) for p, v in sorted(grouped.items())]
 
-    @staticmethod
-    def _fill_table(table: QTableWidget, rows: list[dict], keys: list[str]) -> None:
+    def _fill_table(self, table: QTableWidget, rows: list[dict], keys: list[str]) -> None:
+        if table is self.variance_table: self._table_refreshing = True
         table.setSortingEnabled(False); table.setRowCount(len(rows))
         for i, row in enumerate(rows):
+            identity = (str(row.get("period", "")), str(row.get("department", "")), str(row.get("account", "")), str(row.get("kind", "")))
             for j, key in enumerate(keys):
                 value = row.get(key, "")
-                item = QTableWidgetItem(_money(float(value)) if isinstance(value, (int, float)) and key not in ("variance_percent",) else str(value))
-                if isinstance(value, (int, float)): item.setData(Qt.ItemDataRole.UserRole, float(value)); item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                display = f"{float(value):.1f}%" if key == "variance_percent" and value is not None else "—" if key == "variance_percent" else _money(float(value)) if isinstance(value, (int, float)) else str(value)
+                item = QTableWidgetItem(display)
+                item.setData(Qt.ItemDataRole.UserRole, float(value) if isinstance(value, (int, float)) else None)
+                item.setData(Qt.ItemDataRole.UserRole + 1, identity)
+                if isinstance(value, (int, float)): item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 table.setItem(i, j, item)
         table.setSortingEnabled(True)
+        if table is self.variance_table: self._table_refreshing = False
+
+    def _commit_variance_edit(self, row_index: int, column: int) -> None:
+        if self._table_refreshing or column not in (4, 5): return
+        item = self.variance_table.item(row_index, column)
+        if item is None: return
+        identity = item.data(Qt.ItemDataRole.UserRole + 1)
+        record = next((r for r in self._records if self._identity(r) == identity), None)
+        if record is None: return
+        text = item.text().strip().replace("$", "").replace(",", "").replace("(", "-").replace(")", "")
+        try:
+            value = float(text)
+            if not __import__("math").isfinite(value): raise ValueError
+        except ValueError:
+            QMessageBox.warning(self, "Invalid amount", "Enter a valid finite monetary amount. The previous value has been restored.")
+            self.refresh(); return
+        key = "budget" if column == 4 else "actual"
+        record[key] = value
+        # Seed the persistent working set before the first edit (including an
+        # in-memory demo or caller-supplied scenario), then upsert the changed key.
+        self.store.save((FinancialFact(str(r["period"]), str(r["department"]), str(r["account"]), str(r["kind"]), float(r["budget"]), float(r["actual"])) for r in self._records), replace=False)
+        fact = FinancialFact(str(record["period"]), str(record["department"]), str(record["account"]), str(record["kind"]), float(record["budget"]), float(record["actual"]))
+        self.store.upsert(fact)
+        self.demo_mode = False
+        self._records = [self._normalize_record(r) for r in self.store.fetch()]
+        self.demo_toggle.setText("Use demo data")
+        self._populate_filters(); self.refresh(); self.refresh_forecast()
+        self.import_status.setText(f"Saved {key} for {identity[0]} · {identity[1]} · {identity[2]}.")
+
+    @staticmethod
+    def _identity(row: Any) -> tuple[str, str, str, str]:
+        return tuple(str(_get(row, key, "")) for key in ("period", "department", "account", "kind"))
 
     def set_records(self, records: Iterable[Any]) -> None:
         self._records = list(records); self._populate_filters(); self.refresh()

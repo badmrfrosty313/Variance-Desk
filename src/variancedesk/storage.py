@@ -37,6 +37,15 @@ class FinancialStore:
         self.connection.commit()
         return cursor.rowcount
 
+    def upsert(self, fact: FinancialFact) -> None:
+        self.connection.execute(
+            """INSERT INTO financial_facts VALUES (?, ?, ?, ?, ?, ?)
+               ON CONFLICT(period, department, account, kind) DO UPDATE SET
+               budget=excluded.budget, actual=excluded.actual""",
+            (fact.period, fact.department, fact.account, fact.kind, fact.budget, fact.actual),
+        )
+        self.connection.commit()
+
     def fetch(self, department: str | None = None) -> list[FinancialFact]:
         query = "SELECT period, department, account, kind, budget, actual FROM financial_facts"
         parameters: tuple[str, ...] = ()
