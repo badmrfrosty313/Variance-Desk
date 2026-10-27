@@ -1,0 +1,45 @@
+name: Windows build and release
+
+on:
+  push:
+    branches: [main, work]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  test-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - run: QT_QPA_PLATFORM=offscreen pytest
+  windows-package:
+    runs-on: windows-latest
+    needs: test-linux
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+      - run: pytest
+      - run: pyinstaller --noconfirm --clean --windowed --name VarianceDesk --collect-all matplotlib --collect-all PySide6 --collect-all reportlab --collect-all openpyxl --paths src src/variancedesk/__main__.py
+      - shell: pwsh
+        run: .\\dist\\VarianceDesk\\VarianceDesk.exe --self-test --headless; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - run: Compress-Archive -Path dist\\VarianceDesk\\* -DestinationPath VarianceDesk-Windows-x64.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VarianceDesk-Windows-x64
+          path: VarianceDesk-Windows-x64.zip
+      - name: Publish release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: VarianceDesk-Windows-x64.zip
