@@ -36,15 +36,28 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="VarianceDesk")
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--headless", action="store_true")
+    parser.add_argument("--smoke-gui", action="store_true")
     args = parser.parse_args(argv)
     if args.self_test:
         return self_test()
     from PySide6.QtWidgets import QApplication
     from .ui import DashboardWindow
     from .sample_data import demo_transactions
-    app = QApplication(sys.argv)
-    window = DashboardWindow(demo_transactions())
-    window.show()
+    app = QApplication.instance() or QApplication(sys.argv)
+    try:
+        records = demo_transactions()
+        window = DashboardWindow(records)
+        window.show()
+        if args.smoke_gui:
+            app.processEvents()
+            if not window.isVisible() or window.table.rowCount() != len(records):
+                raise RuntimeError("Dashboard did not render the demonstration records")
+            window.close()
+            app.processEvents()
+            return 0
+    except Exception as error:
+        print(f"VarianceDesk GUI startup failed: {error}", file=sys.stderr)
+        return 1
     return app.exec()
 
 

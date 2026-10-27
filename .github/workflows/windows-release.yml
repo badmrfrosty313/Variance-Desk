@@ -37,9 +37,20 @@ jobs:
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev]"
       - run: python -m pytest -vv
-      - run: pyinstaller --noconfirm --clean --windowed --name VarianceDesk --collect-all matplotlib --collect-all PySide6 --collect-all reportlab --collect-all openpyxl --paths src src/variancedesk/__main__.py
+      - run: pyinstaller --noconfirm --clean --windowed --name VarianceDesk --collect-all matplotlib --collect-all PySide6 --collect-all reportlab --collect-all openpyxl --paths src launcher.py
       - shell: pwsh
-        run: .\\dist\\VarianceDesk\\VarianceDesk.exe --self-test --headless; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        run: |
+          $exe = Resolve-Path '.\dist\VarianceDesk\VarianceDesk.exe'
+          & $exe --self-test --headless
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $exe --smoke-gui
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & $exe --self-test --headless
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $normal = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 8
+          if ($normal.HasExited) { throw "Normal GUI launch exited immediately with code $($normal.ExitCode)" }
+          if (-not $normal.HasExited) { Stop-Process -Id $normal.Id }
       - run: Compress-Archive -Path dist\\VarianceDesk\\* -DestinationPath VarianceDesk-Windows-x64.zip
       - uses: actions/upload-artifact@v4
         with:
