@@ -37,9 +37,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--headless", action="store_true")
     parser.add_argument("--smoke-gui", action="store_true")
+    parser.add_argument("--qa-e2e", action="store_true")
+    parser.add_argument("--qa-output", default="qa-results")
     args = parser.parse_args(argv)
     if args.self_test:
         return self_test()
+    if args.qa_e2e:
+        from .qa import run_packaged_qa
+        return run_packaged_qa(args.qa_output)
     from PySide6.QtWidgets import QApplication
     from .ui import DashboardWindow
     app = QApplication.instance() or QApplication(sys.argv)

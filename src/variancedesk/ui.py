@@ -370,11 +370,15 @@ class DashboardWindow(QMainWindow):
         self._records = list(records); self._populate_filters(); self.refresh()
 
     def _populate_filters(self) -> None:
+        selected_period = self.period_filter.currentText() if self.period_filter.count() else "All periods"
+        selected_department = self.department_filter.currentText() if self.department_filter.count() else "All departments"
         periods = sorted({str(_get(r, "period", "")) for r in self._records})
         departments = sorted({str(_get(r, "department", "Unclassified")) for r in self._records})
         self.period_filter.blockSignals(True); self.department_filter.blockSignals(True)
         self.period_filter.clear(); self.period_filter.addItem("All periods"); self.period_filter.addItems(periods)
         self.department_filter.clear(); self.department_filter.addItem("All departments"); self.department_filter.addItems(departments)
+        self.period_filter.setCurrentText(selected_period if selected_period in ("All periods", *periods) else "All periods")
+        self.department_filter.setCurrentText(selected_department if selected_department in ("All departments", *departments) else "All departments")
         self.period_filter.blockSignals(False); self.department_filter.blockSignals(False)
 
     def _filtered(self) -> list[Any]:

@@ -24,7 +24,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libegl1 libopengl0 libgl1 libxkbcommon0 libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-shape0 libxcb-xfixes0 libxcb-xinerama0 libxcb-xkb1
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev]"
-      - run: python -m pytest -vv
+      - run: python -m pytest -vv --junitxml=pytest-results.xml
   windows-package:
     runs-on: windows-latest
     env:
@@ -36,7 +36,7 @@ jobs:
         with: { python-version: "3.12" }
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev]"
-      - run: python -m pytest -vv
+      - run: python -m pytest -vv --junitxml=pytest-results.xml
       - run: pyinstaller --noconfirm --clean --windowed --name VarianceDesk --collect-all matplotlib --collect-all PySide6 --collect-all reportlab --collect-all openpyxl --paths src launcher.py
       - shell: pwsh
         run: |
@@ -51,6 +51,21 @@ jobs:
           Start-Sleep -Seconds 8
           if ($normal.HasExited) { throw "Normal GUI launch exited immediately with code $($normal.ExitCode)" }
           if (-not $normal.HasExited) { Stop-Process -Id $normal.Id }
+      - name: Run packaged application end-to-end workflow
+        shell: pwsh
+        run: |
+          $exe = Resolve-Path '.\dist\VarianceDesk\VarianceDesk.exe'
+          & $exe --qa-e2e --qa-output qa-results
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Upload QA diagnostics and screen captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: VarianceDesk-Windows-QA-${{ github.run_id }}
+          path: |
+            qa-results/
+            pytest-results.xml
+          if-no-files-found: warn
       - run: Compress-Archive -Path dist\\VarianceDesk\\* -DestinationPath VarianceDesk-Windows-x64.zip
       - uses: actions/upload-artifact@v4
         with:
