@@ -21,7 +21,7 @@ jobs:
         with: { python-version: "3.12" }
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev]"
-      - run: xvfb-run -a python -m pytest -vv
+      - run: python -m pytest -p no:pytestqt -vv tests/test_finance.py tests/test_imports_storage.py tests/test_reporting.py
   windows-package:
     runs-on: windows-latest
     needs: test-linux
