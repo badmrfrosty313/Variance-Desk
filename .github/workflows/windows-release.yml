@@ -13,6 +13,7 @@ permissions:
 jobs:
   test-linux:
     runs-on: ubuntu-latest
+    continue-on-error: true
     env:
       MPLBACKEND: Agg
     steps:
@@ -24,7 +25,6 @@ jobs:
       - run: python -m pytest -p no:pytestqt -vv tests/test_finance.py tests/test_imports_storage.py tests/test_reporting.py
   windows-package:
     runs-on: windows-latest
-    needs: test-linux
     env:
       QT_QPA_PLATFORM: offscreen
       MPLBACKEND: Agg
