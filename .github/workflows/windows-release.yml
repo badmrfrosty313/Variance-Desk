@@ -10,23 +10,24 @@ on:
 permissions:
   contents: write
 
-env:
-  QT_QPA_PLATFORM: offscreen
-  MPLBACKEND: Agg
-
 jobs:
   test-linux:
     runs-on: ubuntu-latest
+    env:
+      MPLBACKEND: Agg
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -e ".[dev]"
-      - run: python -m pytest -vv
+      - run: xvfb-run -a python -m pytest -vv
   windows-package:
     runs-on: windows-latest
     needs: test-linux
+    env:
+      QT_QPA_PLATFORM: offscreen
+      MPLBACKEND: Agg
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
