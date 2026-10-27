@@ -209,6 +209,7 @@ class DashboardWindow(QMainWindow):
     @staticmethod
     def _new_table(headers: list[str]) -> QTableWidget:
         table = QTableWidget(0, len(headers)); table.setHorizontalHeaderLabels(headers)
+        table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.setAlternatingRowColors(True); table.setSortingEnabled(True)
         header = table.horizontalHeader()
         header.setStretchLastSection(False)

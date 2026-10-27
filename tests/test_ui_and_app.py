@@ -13,6 +13,7 @@ def test_dashboard_loads_demo_records_and_filters(qtbot, monkeypatch, tmp_path):
     qtbot.addWidget(window)
     assert window.table.rowCount() == 48
     assert "$" in window.cards["revenue"].value.text()
+    assert window.table.editTriggers() == window.table.EditTrigger.NoEditTriggers
     window.department_filter.setCurrentText("Sales")
     assert window.table.rowCount() == 24
 
